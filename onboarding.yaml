@@ -14,7 +14,7 @@ spec:
         app: frtback-onboarding
     spec:
       nodeSelector:                            # Correct indentation for nodeSelector
-        eks.amazonaws.com/nodegroup: preprod-private   # Specify the node group name
+        eks.amazonaws.com/nodegroup: kovaion-spot-ng   # Specify the node group name
       containers:
       - name: frtback
         image: sathish8329/appbuilderstageonboarding:1.0.2502
