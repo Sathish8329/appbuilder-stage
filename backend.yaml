@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-deployment
+  namespace: appbuilder-stage
+spec:
+  selector:
+    matchLabels:
+      app: api
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      annotations:
+        instrumentation.opentelemetry.io/inject-nodejs: "nodejs-instrumentation"    
+      labels:
+        app: api
+    spec:
+      nodeSelector:                            
+        eks.amazonaws.com/nodegroup: stage-private   
+      containers:
+      - name: api
+        image: sathish8329/appbuilderback:2481
+        ports:
+        - containerPort: 8000
+        livenessProbe:
+          httpGet:
+            path: /api
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10 
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: appbuilder-api-service
+  namespace: appbuilder-stage
+spec:
+  selector:
+    app: api
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP

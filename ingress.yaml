@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: appbuilder-ingress
+  namespace: appbuilder-stage
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m" # Set the maximum allowed request body size to 100 MB
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "600" # Increase connect timeout to 10 minutes
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"    # Increase send timeout to 10 minutes
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"    # Increase read timeout to 10 minutes
+spec:
+  rules:
+  - host: "*.kovaion.play"
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: appbuilder-api-service
+            port:
+              number: 8000
+      - path: /auth
+        pathType: Prefix
+        backend:
+          service:
+            name: appbuilder-auth-service
+            port:
+              number: 8080
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: appbuilder-frontend-service
+            port:
+              number: 5001
+---

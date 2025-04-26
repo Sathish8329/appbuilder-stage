@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: appbuilder-onboarding-deployment
+  namespace: appbuilder
+spec:
+  selector:
+    matchLabels:
+      app: frtback-onboarding
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: frtback-onboarding
+    spec:
+      nodeSelector:                            # Correct indentation for nodeSelector
+        eks.amazonaws.com/nodegroup: preprod    # Specify the node group name
+      containers:
+      - name: frtback
+        image: sathish8329/appbuilderonboarding:1.0.1210
+        ports:
+        - containerPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: appbuilder-frtback-service
+  namespace: appbuilder
+spec:
+  selector:
+    app: frtback-onboarding
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3000
+  type: NodePort
