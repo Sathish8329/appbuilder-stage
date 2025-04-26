@@ -21,7 +21,7 @@ spec:
         app: api
     spec:
       nodeSelector:                            
-        eks.amazonaws.com/nodegroup: stage-private   
+        eks.amazonaws.com/nodegroup: kovaion-spot-ng
       containers:
       - name: api
         image: sathish8329/appbuilderstageback:2500
