@@ -17,7 +17,7 @@ spec:
         eks.amazonaws.com/nodegroup: kovaion-spot-ng   # Specify the node group name
       containers:
       - name: frtback
-        image: sathish8329/appbuilderstageonboarding:1.0.2509
+        image: sathish8329/appbuilderonboardingpreprod:1.0.2519
         ports:
         - containerPort: 3000
 ---
