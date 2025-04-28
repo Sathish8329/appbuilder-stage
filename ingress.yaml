@@ -34,7 +34,7 @@ spec:
           service:
             name: appbuilder-frontend-service
             port:
-              number: 5001
+              number: 80
 ---
 
 apiVersion: networking.k8s.io/v1
