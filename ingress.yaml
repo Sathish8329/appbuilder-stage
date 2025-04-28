@@ -47,7 +47,7 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "100m" # Set the maximum allowed request body size to 100 MB
 spec:
   rules:
-  - host: "kovaion.play"
+  - host: "kovaionplay.com"
     http:
       paths:
       - path: /
