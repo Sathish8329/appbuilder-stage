@@ -37,23 +37,23 @@ spec:
               number: 5001
 ---
 
-# apiVersion: networking.k8s.io/v1
-# kind: Ingress
-# metadata:
-#   name: appbuilder-ingress-stage
-#   namespace: appbuilder-stage
-#   annotations:
-#     kubernetes.io/ingress.class: "nginx"
-#     nginx.ingress.kubernetes.io/proxy-body-size: "100m" # Set the maximum allowed request body size to 100 MB
-# spec:
-#   rules:
-#   - host: "stage.kovaionplay.com"
-#     http:
-#       paths:
-#       - path: /
-#         pathType: Prefix
-#         backend:
-#           service:
-#             name: appbuilder-frtback-service
-#             port:
-#               number: 80
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: appbuilder-ingress-stage
+  namespace: appbuilder-stage
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m" # Set the maximum allowed request body size to 100 MB
+spec:
+  rules:
+  - host: "kovaionplay.com"
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: appbuilder-frtback-service
+            port:
+              number: 80
