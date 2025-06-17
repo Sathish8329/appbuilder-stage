@@ -24,7 +24,7 @@ spec:
         eks.amazonaws.com/nodegroup: kovaion-spot-ng
       containers:
       - name: api
-        image: sathish8329/preprodbackappbuilder:3112
+        image: sathish8329/preprodbackappbuilder:3117
         ports:
         - containerPort: 8000
         livenessProbe:
