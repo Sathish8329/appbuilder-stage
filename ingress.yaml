@@ -30,6 +30,13 @@ spec:
             name: appbuilder-auth-service
             port:
               number: 8080
+      - path: /socket.io
+        pathType: Prefix
+        backend:
+          service:
+            name: appbuilder-api-service
+            port:
+              number: 8000              
       - path: /
         pathType: Prefix
         backend:
