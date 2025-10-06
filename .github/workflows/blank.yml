@@ -1,0 +1,126 @@
+# CI/CD Pipeline for Azure DevOps Source + GitHub Actions
+name: Deploy to AWS EKS
+
+# Controls when the workflow will run
+on:
+  # Trigger via repository dispatch from Azure DevOps
+  repository_dispatch:
+    types: [azure-devops-push, deploy-request]
+  
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy'
+        required: true
+        default: 'main'
+      commit_sha:
+        description: 'Commit SHA to deploy'
+        required: false
+
+# Set permissions for OIDC authentication
+permissions:
+  id-token: write
+  contents: read
+
+# Environment variables
+env:
+  AWS_REGION: ap-south-1
+  EKS_CLUSTER_NAME: kovaionai
+  ECR_REPOSITORY: your-app-name
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout Azure DevOps source code
+      - name: Checkout Azure DevOps Repository
+        env:
+          AZURE_DEVOPS_TOKEN: ${{ secrets.AZURE_DEVOPS_TOKEN }}
+          BRANCH: ${{ github.event.client_payload.branch || github.event.inputs.branch || 'main' }}
+          COMMIT_SHA: ${{ github.event.client_payload.commit_sha || github.event.inputs.commit_sha }}
+        run: |
+          echo "Cloning from Azure DevOps..."
+          git clone https://:$AZURE_DEVOPS_TOKEN@dev.azure.com/your-org/your-project/_git/your-repo source-code
+          cd source-code
+          
+          if [ -n "$COMMIT_SHA" ]; then
+            echo "Checking out specific commit: $COMMIT_SHA"
+            git checkout $COMMIT_SHA
+          else
+            echo "Checking out branch: $BRANCH"
+            git checkout $BRANCH
+          fi
+          
+          echo "Current commit: $(git rev-parse HEAD)"
+          echo "COMMIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
+
+      # Step 2: Configure AWS credentials using OIDC
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-eks-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Step 3: Login to Amazon ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Step 4: Build Docker image
+      - name: Build Docker Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ env.COMMIT_SHA }}
+        working-directory: ./source-code
+        run: |
+          echo "Building Docker image..."
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          
+          echo "ECR_REGISTRY=$ECR_REGISTRY" >> $GITHUB_ENV
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+      # Step 5: Security scan with Trivy
+      - name: Run Trivy Security Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      # Step 6: Push image to ECR
+      - name: Push to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          echo "Pushing Docker image to ECR..."
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:${{ env.IMAGE_TAG }}
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      # Step 7: Deploy to EKS
+      - name: Deploy to EKS
+        run: |
+          echo "Updating EKS deployment..."
+          aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+          
+          # Update deployment with new image
+          kubectl set image deployment/your-app-deployment \
+            your-app-container=$ECR_REGISTRY/$ECR_REPOSITORY:${{ env.IMAGE_TAG }} \
+            --namespace=your-namespace
+          
+          # Wait for rollout to complete
+          kubectl rollout status deployment/your-app-deployment --namespace=your-namespace --timeout=300s
+
+      # Step 8: Notify deployment status
+      - name: Deployment Status
+        if: always()
+        run: |
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "✅ Deployment successful!"
+            echo "Image: $ECR_REGISTRY/$ECR_REPOSITORY:${{ env.IMAGE_TAG }}"
+            echo "Commit: ${{ env.COMMIT_SHA }}"
+          else
+            echo "❌ Deployment failed!"
+          fi
