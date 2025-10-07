@@ -1,1 +1,109 @@
+# CI/CD Pipeline for Azure DevOps Source + GitHub Actions
+name: Deploy Kovaion FE to AWS EKS
 
+# Controls when the workflow will run
+on:
+  # Trigger via repository dispatch from Azure DevOps
+  repository_dispatch:
+    types: [azure-devops-push, deploy-request]
+  
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy'
+        required: true
+        default: 'delveant_UI_testing'
+        type: string
+      commit_sha:
+        description: 'Commit SHA to deploy (optional)'
+        required: false
+        type: string
+
+# Set permissions for OIDC authentication
+permissions:
+  id-token: write
+  contents: read
+
+# Environment variables
+env:
+  AWS_REGION: ap-south-1
+  EKS_CLUSTER_NAME: kovaionai
+  ECR_REPOSITORY: 627133981011.dkr.ecr.ap-south-1.amazonaws.com/delveant_stage
+  AZURE_ORG: kovaionai
+  AZURE_PROJECT: Generic-Workflows
+  AZURE_REPO: kovaionai_fe
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Configure AWS credentials using OIDC
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::627133981011:role/GitHubActionsRole-Kovaion
+          aws-region: ${{ env.AWS_REGION }}
+          
+      # Step 2: Retrieve Azure DevOps PAT from AWS Secrets Manager
+      - name: Get Azure DevOps Token from Secrets Manager
+        uses: aws-actions/aws-secretsmanager-get-secrets@v1
+        with:
+          secret-ids: |
+            AZURE_DEVOPS_TOKEN,prod/azure-devops/pat
+          parse-json-secrets: true
+            
+      # Step 3: Clone Azure DevOps Repository
+      - name: Clone Kovaion FE Repository from Azure DevOps
+        env:
+          BRANCH: ${{ github.event.client_payload.branch || github.event.inputs.branch || 'delveant_UI_testing' }}
+          COMMIT_SHA: ${{ github.event.client_payload.commit_sha || github.event.inputs.commit_sha }}
+        run: |
+          echo "🚀 Cloning kovaionai_fe from Azure DevOps..."
+          echo "Organization: ${{ env.AZURE_ORG }}"
+          echo "Project: ${{ env.AZURE_PROJECT }}"
+          echo "Repository: ${{ env.AZURE_REPO }}"
+          echo "Target branch: $BRANCH"
+          
+          # Set git configuration
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          
+          # Clone the repository
+          echo "📥 Cloning repository..."
+          if ! git clone https://${{ env.AZURE_DEVOPS_TOKEN }}@dev.azure.com/${{ env.AZURE_ORG }}/${{ env.AZURE_PROJECT }}/_git/${{ env.AZURE_REPO }} source-code; then
+            echo "❌ Failed to clone repository"
+            echo "Please check:"
+            echo "1. Azure DevOps PAT token has correct permissions"
+            echo "2. Repository URL is accessible"
+            echo "3. Token is stored correctly in AWS Secrets Manager"
+            exit 1
+          fi
+          
+          cd source-code
+          
+          # Fetch all branches to ensure we have the latest
+          echo "🔄 Fetching all branches..."
+          git fetch --all
+          
+          # List available branches for debugging
+          echo "📋 Available remote branches:"
+          git branch -r | head -10
+          
+          # Checkout specific commit or branch
+          if [ -n "$COMMIT_SHA" ]; then
+            echo "📌 Checking out specific commit: $COMMIT_SHA"
+            if ! git checkout $COMMIT_SHA; then
+              echo "❌ Failed to checkout commit $COMMIT_SHA"
+              echo "Available commits on current branch:"
+              git log --oneline -10
+              exit 1
+            fi
+          else
+            echo "🌿 Checking out branch: $BRANCH"
+            # Try to checkout the branch
+            if git show-ref --verify --quiet "refs/remotes/origin/$BRANCH"; then
+              git checkout -b $BRANCH origin/$BRANCH
+            elif git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+              git
