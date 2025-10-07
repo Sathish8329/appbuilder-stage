@@ -13,7 +13,7 @@ on:
       branch:
         description: 'Branch to deploy'
         required: true
-        default: 'main'
+        default: 'delveant_UI_testing'
       commit_sha:
         description: 'Commit SHA to deploy'
         required: false
@@ -27,7 +27,7 @@ permissions:
 env:
   AWS_REGION: ap-south-1
   EKS_CLUSTER_NAME: kovaionai
-  ECR_REPOSITORY: your-app-name
+  ECR_REPOSITORY: 627133981011.dkr.ecr.ap-south-1.amazonaws.com/delveant_stage
 
 jobs:
   deploy:
