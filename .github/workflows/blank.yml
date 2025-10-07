@@ -1,13 +1,7 @@
 # CI/CD Pipeline for Azure DevOps Source + GitHub Actions
 name: Deploy Kovaion FE to AWS EKS
 
-# Controls when the workflow will run
 on:
-  # Trigger via repository dispatch from Azure DevOps
-  repository_dispatch:
-    types: [azure-devops-push, deploy-request]
-  
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
     inputs:
       branch:
@@ -15,21 +9,13 @@ on:
         required: true
         default: 'delveant_UI_testing'
         type: string
-      commit_sha:
-        description: 'Commit SHA to deploy (optional)'
-        required: false
-        type: string
 
-# Set permissions for OIDC authentication
 permissions:
   id-token: write
   contents: read
 
-# Environment variables
 env:
   AWS_REGION: ap-south-1
-  EKS_CLUSTER_NAME: kovaionai
-  ECR_REPOSITORY: 627133981011.dkr.ecr.ap-south-1.amazonaws.com/delveant_stage
   AZURE_ORG: kovaionai
   AZURE_PROJECT: Generic-Workflows
   AZURE_REPO: kovaionai_fe
@@ -39,14 +25,14 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      # Step 1: Configure AWS credentials using OIDC
+      # Step 1: Configure AWS credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::627133981011:role/GitHubActionsRole-Kovaion
           aws-region: ${{ env.AWS_REGION }}
           
-      # Step 2: Retrieve Azure DevOps PAT from AWS Secrets Manager
+      # Step 2: Get Azure DevOps token
       - name: Get Azure DevOps Token from Secrets Manager
         uses: aws-actions/aws-secretsmanager-get-secrets@v1
         with:
@@ -54,154 +40,18 @@ jobs:
             AZURE_DEVOPS_TOKEN,prod/azure-devops/pat
           parse-json-secrets: true
             
-      # Step 3: Clone Azure DevOps Repository
-      - name: Clone Kovaion FE Repository from Azure DevOps
+      # Step 3: Clone repository
+      - name: Clone Repository
         env:
-          BRANCH: ${{ github.event.client_payload.branch || github.event.inputs.branch || 'delveant_UI_testing' }}
-          COMMIT_SHA: ${{ github.event.client_payload.commit_sha || github.event.inputs.commit_sha }}
+          BRANCH: ${{ github.event.inputs.branch }}
         run: |
-          echo "🚀 Cloning kovaionai_fe from Azure DevOps..."
-          echo "Organization: ${{ env.AZURE_ORG }}"
-          echo "Project: ${{ env.AZURE_PROJECT }}"
-          echo "Repository: ${{ env.AZURE_REPO }}"
-          echo "Target branch: $BRANCH"
+          echo "Cloning kovaionai_fe from branch: $BRANCH"
           
-          # Debug: Check if token was retrieved (without showing the actual token)
-          if [ -n "$AZURE_DEVOPS_TOKEN" ]; then
-            echo "✅ Azure DevOps token retrieved from AWS Secrets Manager"
-            # Get the length for verification (without exposing token)
-            echo "📏 Token length: ${#AZURE_DEVOPS_TOKEN} characters"
-          else
-            echo "❌ Azure DevOps token not found in environment"
-            echo "Available environment variables:"
-            env | grep -E "(AZURE|TOKEN)" | cut -d'=' -f1
-            exit 1
-          fi
-          
-          # Set git configuration
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-          
-          # Clone with explicit token format - try different URL formats
-          echo "📥 Attempting to clone repository..."
-          
-          # Method 1: Standard format with token as username
-          if git clone https://$AZURE_DEVOPS_TOKEN@dev.azure.com/${{ env.AZURE_ORG }}/${{ env.AZURE_PROJECT }}/_git/${{ env.AZURE_REPO }} source-code; then
-            echo "✅ Clone successful with Method 1"
-          # Method 2: Alternative format with empty username
-          elif git clone https://:$AZURE_DEVOPS_TOKEN@dev.azure.com/${{ env.AZURE_ORG }}/${{ env.AZURE_PROJECT }}/_git/${{ env.AZURE_REPO }} source-code; then
-            echo "✅ Clone successful with Method 2"
-          # Method 3: Using git credential helper
-          else
-            echo "🔄 Trying credential helper method..."
-            echo "https://$AZURE_DEVOPS_TOKEN@dev.azure.com" > ~/.git-credentials
-            git config --global credential.helper store
-            if git clone https://dev.azure.com/${{ env.AZURE_ORG }}/${{ env.AZURE_PROJECT }}/_git/${{ env.AZURE_REPO }} source-code; then
-              echo "✅ Clone successful with Method 3"
-            else
-              echo "❌ All clone methods failed"
-              echo "🔍 Let's check the token format..."
-              # Check if token starts with expected Azure DevOps PAT format
-              if [[ $AZURE_DEVOPS_TOKEN == *"{"* ]]; then
-                echo "⚠️  Token appears to be in JSON format - need to parse it"
-              fi
-              exit 1
-            fi
-          fi
+          # Use the token (note: AWS creates AZURE_DEVOPS_TOKEN_TOKEN variable)
+          git clone https://$AZURE_DEVOPS_TOKEN_TOKEN@dev.azure.com/${{ env.AZURE_ORG }}/${{ env.AZURE_PROJECT }}/_git/${{ env.AZURE_REPO }} source-code
           
           cd source-code
-          git fetch --all
+          git checkout $BRANCH
           
-          # Checkout logic
-          if [ -n "$COMMIT_SHA" ]; then
-            echo "📌 Checking out specific commit: $COMMIT_SHA"
-            git checkout $COMMIT_SHA
-          else
-            echo "🌿 Checking out branch: $BRANCH"
-            if git show-ref --verify --quiet "refs/remotes/origin/$BRANCH"; then
-              git checkout -b $BRANCH origin/$BRANCH
-            elif git show-ref --verify --quiet "refs/heads/$BRANCH"; then
-              git checkout $BRANCH
-            else
-              echo "❌ Branch '$BRANCH' not found"
-              echo "Available branches:"
-              git branch -r
-              exit 1
-            fi
-          fi
-          
-          echo "✅ Repository cloned and checked out successfully"
-          echo "📍 Current commit: $(git rev-parse HEAD)"
-          echo "🌿 Current branch: $(git branch --show-current)"
-          
-          # Clean up credentials
-          rm -f ~/.git-credentials 2>/dev/null || true
-          
-          # Set environment variables for later steps
-          echo "COMMIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
-          echo "CURRENT_BRANCH=$(git branch --show-current)" >> $GITHUB_ENV
-
-      # Step 4: Analyze Repository Contents
-      - name: Analyze Kovaion FE Repository
-        run: |
-          cd source-code
-          
-          echo "📁 Repository structure (top level):"
-          ls -la | head -20
-          
-          echo ""
-          echo "📊 Repository statistics:"
-          echo "Total files: $(find . -type f | wc -l)"
-          echo "Total directories: $(find . -type d | wc -l)"
-          echo "Repository size: $(du -sh . | cut -f1)"
-          
-          # Check for common frontend files
-          echo ""
-          echo "🔍 Frontend project analysis:"
-          
-          if [ -f "package.json" ]; then
-            echo "✅ package.json found - Node.js/React project detected"
-            echo "PROJECT_TYPE=nodejs" >> $GITHUB_ENV
-            echo "📦 Package info:"
-            cat package.json | jq -r '.name, .version, .description' 2>/dev/null || echo "Unable to parse package.json"
-          fi
-          
-          if [ -f "Dockerfile" ]; then
-            echo "✅ Dockerfile found"
-            echo "HAS_DOCKERFILE=true" >> $GITHUB_ENV
-            echo "🐳 Dockerfile preview:"
-            head -10 Dockerfile
-          else
-            echo "❌ Dockerfile not found"
-            echo "HAS_DOCKERFILE=false" >> $GITHUB_ENV
-          fi
-          
-          if [ -f "yarn.lock" ]; then
-            echo "✅ yarn.lock found - using Yarn"
-            echo "PACKAGE_MANAGER=yarn" >> $GITHUB_ENV
-          elif [ -f "package-lock.json" ]; then
-            echo "✅ package-lock.json found - using NPM"
-            echo "PACKAGE_MANAGER=npm" >> $GITHUB_ENV
-          fi
-          
-          if [ -f "next.config.js" ] || [ -f "next.config.mjs" ]; then
-            echo "✅ Next.js project detected"
-            echo "FRAMEWORK=nextjs" >> $GITHUB_ENV
-          elif [ -f "vite.config.js" ] || [ -f "vite.config.ts" ]; then
-            echo "✅ Vite project detected"  
-            echo "FRAMEWORK=vite" >> $GITHUB_ENV
-          elif [ -f "angular.json" ]; then
-            echo "✅ Angular project detected"
-            echo "FRAMEWORK=angular" >> $GITHUB_ENV
-          fi
-
-      # Step 5: Prepare Build Environment
-      - name: Prepare Build Environment
-        run: |
-          echo "🛠️ Build environment prepared"
-          echo "Project Type: ${{ env.PROJECT_TYPE }}"
-          echo "Package Manager: ${{ env.PACKAGE_MANAGER }}"
-          echo "Framework: ${{ env.FRAMEWORK }}"
-          echo "Has Dockerfile: ${{ env.HAS_DOCKERFILE }}"
-          echo "Target Branch: ${{ env.CURRENT_BRANCH }}"
-          echo "Commit SHA: ${{ env.COMMIT_SHA }}"
+          echo "✅ Repository cloned successfully"
+          ls -la
